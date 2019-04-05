@@ -3,6 +3,11 @@ name = "htmldom_read"
 version = "0.1.0"
 authors = ["Maxym Naumchyk <max.naumch@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/max-ym/htmldom_read"
+keywords = ["html", "parser", "xml", "reader", "node", "tree", "dom", "read"]
+categories = ["Text Processing", "Parsing"]
+license = "MIT"
+description = "HTML reader that parses the code into easy-use tree"
 
 [dependencies]
 quick-xml = "0.13"
