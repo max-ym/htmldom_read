@@ -4,9 +4,9 @@
 //! To load nodes from HTML.
 //! ```
 //! # use htmldom_read::Node;
-//! let html = r##"
+//! let html = r#"
 //!     <div><p>Text</p></div>
-//! "##;
+//! "#;
 //! // Load with default settings.
 //! let nodes = Node::from_html(html, &Default::default()).unwrap().unwrap();
 //! let first_node = nodes.get(0).unwrap();
@@ -22,9 +22,9 @@
 //! Load node with text mixed with children.
 //! ```
 //! # use htmldom_read::Node;
-//! let html = r##"
+//! let html = r#"
 //!     <p>Text <sup>child</sup> more text</p>
-//! "##;
+//! "#;
 //! let from = Node::from_html(html, &Default::default()).unwrap().unwrap();
 //! let node = from.get(0).unwrap();
 //! let children = node.children();
@@ -46,10 +46,10 @@ use quick_xml::{Error, Reader};
 use std::collections::LinkedList;
 use memchr::{memchr3_iter, memchr_iter};
 
-/// The node. Contains information about opening and corresponding closing tag. It also can
+/// Contains information about opening and corresponding closing tags. It also can
 /// contain the value of the text between opening and closing tags if there are no children.
 /// Otherwise, if there are children mixed with text then each text chunk is separated in
-/// it's own node.
+/// it's own node with other children in order they appear in the code.
 #[derive(Clone, Debug)]
 pub struct Node {
 
@@ -71,7 +71,7 @@ pub struct Node {
     children: Vec<Node>,
 }
 
-/// Settings that modify how to load data from HTML.
+/// Settings that provide different options of how to parse HTML.
 #[derive(Clone, PartialEq, Debug)]
 pub struct LoadSettings {
 
@@ -80,7 +80,7 @@ pub struct LoadSettings {
 
 impl Node {
 
-    /// Load node tree from XML string.
+    /// Load node tree from HTML string.
     ///
     /// The root node has no start, end or text elements. It does have only children in it.
     /// When passing empty code, None will be returned.
@@ -340,14 +340,17 @@ impl Node {
         }
     }
 
+    /// Start tag information.
     pub fn start(&self) -> &Option<BytesStart<'static>> {
         &self.start
     }
 
+    /// End tag information.
     pub fn end(&self) -> &Option<BytesEnd<'static>> {
         &self.end
     }
 
+    /// Text that appears between opening and closing tags.
     pub fn text(&self) -> Option<&str> {
         if self.text.is_none() {
             return None;
@@ -356,6 +359,7 @@ impl Node {
         Some(std::str::from_utf8(self.text.as_ref().unwrap().escaped()).unwrap())
     }
 
+    /// Children tags of this node.
     pub fn children(&self) -> &Vec<Node> {
         &self.children
     }
@@ -378,6 +382,7 @@ impl Node {
         }
     }
 
+    /// The name of the tag that is represented by the node.
     pub fn tag_name(&self) -> Option<&str> {
         if self.start.is_none() {
             return None;
