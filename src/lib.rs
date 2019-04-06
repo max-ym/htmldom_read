@@ -10,12 +10,15 @@
 //! // Load with default settings.
 //! let nodes = Node::from_html(html, &Default::default()).unwrap().unwrap();
 //! let first_node = nodes.children().get(0).unwrap();
+//! // First node is <div>
 //! assert_eq!("div", first_node.tag_name().unwrap());
 //!
 //! let children = first_node.children();
 //!
+//! // First child of <div> is <p>
 //! let first_child = children.get(0).unwrap();
 //! assert_eq!("p", first_child.tag_name().unwrap());
+//! /// The child of <p> is Text
 //! assert_eq!("Text", first_child.children().get(0).unwrap().text().unwrap());
 //! ```
 //!
@@ -123,9 +126,9 @@ pub struct LoadSettings {
 ///         .value_part("someclass");
 /// let result = fetch.fetch();
 /// // Returns the nodes <p> and <a>.
-/// //assert_eq!(result.iter().nth(0).unwrap(),
-/// //        &node.children().get(0).unwrap().children().get(0).unwrap());
-/// //assert_eq!(result.iter().nth(1).unwrap(), &node.children().get(1).unwrap());
+/// assert_eq!(result.iter().nth(0).unwrap(),
+///         &node.children().get(0).unwrap().children().get(0).unwrap());
+/// assert_eq!(result.iter().nth(1).unwrap(), &node.children().get(1).unwrap());
 /// ```
 #[derive(Clone, Copy)]
 pub struct ChildrenFetch<'a> {
