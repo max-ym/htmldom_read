@@ -634,6 +634,11 @@ impl Node {
             *end = String::from(name);
         }
     }
+
+    /// Mutable access to array of node's children.
+    pub fn children_mut(&mut self) -> &mut Vec<Node> {
+        &mut self.children
+    }
 }
 
 impl<'a> ChildrenFetch<'a> {

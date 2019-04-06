@@ -10,7 +10,8 @@ It is also possible to change the nodes and convert them back into HTML string.
 - [x] Search for nodes that have particular attributes
 - [x] Change attributes
 - [x] Change tags name
-- [ ] Edit node's children array
+- [x] Edit node's children array
+- [x] Convert nodes back to HTML
 
 ## Examples
 ### Load nodes from HTML
