@@ -56,7 +56,6 @@ use memchr::{memchr_iter};
 /// it's own node with other children in order they appear in the code.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Node {
-
     /// Start of the tag if any. It may be empty if this is a trailing text at the beginning of
     /// the HTML code. It also is empty in root node.
     start: Option<OpeningTag>,
@@ -74,6 +73,7 @@ pub struct Node {
 /// Information carried in the opening tag.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpeningTag {
+    // TODO mark self-closing tag.
     name: String,
     attrs: Vec<Attribute>,
 }
@@ -526,6 +526,42 @@ impl Node {
     pub fn children_fetch(&self) -> ChildrenFetch {
         ChildrenFetch::for_node(self)
     }
+
+    /// Convert this node and all it's children into HTML string.
+    pub fn to_string(&self) -> String {
+        let mut s = String::new();
+        if let Some(name) = self.tag_name() {
+            s += "<";
+            s += &name;
+
+            let attrs = &self.start.as_ref().unwrap().attrs;
+            for attr in attrs {
+                s += " ";
+                s += &attr.name;
+                s += "=\"";
+                s += &attr.values_to_string();
+                s += "\"";
+            }
+
+            s += ">";
+        }
+        if let Some(ref text) = self.text {
+            s += text;
+        }
+
+        for child in &self.children {
+            s += &child.to_string();
+        }
+
+        if let Some(ref end) = self.end {
+            s += "</";
+            s += end;
+            s += ">";
+        }
+
+        s.shrink_to_fit();
+        s
+    }
 }
 
 impl<'a> ChildrenFetch<'a> {
@@ -803,5 +839,17 @@ mod tests {
         let first = result.children().get(0).unwrap();
         assert_eq!(first.tag_name().unwrap(), "p");
         assert_eq!("Some  ", first.children().get(0).unwrap().text().unwrap());
+    }
+
+    #[test]
+    fn node_to_string() {
+        let html = "<p><i>Text</i><br></p>";
+
+        let result = Node::from_html(html, &Default::default());
+        let result = result.unwrap().unwrap();
+
+        let new_html = result.to_string();
+
+        assert_eq!(html, &new_html);
     }
 }
