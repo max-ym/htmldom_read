@@ -8,6 +8,7 @@ keywords = ["html", "parser", "node", "tree", "reader"]
 categories = ["Text Processing", "Parsing"]
 license = "MIT"
 description = "HTML reader that parses the code into easy-use tree"
+readme = "readme.md"
 
 [dependencies]
 quick-xml = "0.13"
