@@ -76,7 +76,7 @@ pub struct Node {
 /// Information carried in the opening tag.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpeningTag {
-    // TODO mark self-closing tag.
+    empty: bool, // Whether this tag is self-closing.
     name: String,
     attrs: Vec<Attribute>,
 }
@@ -296,6 +296,7 @@ impl Node {
                         }
 
                         OpeningTag {
+                            empty: false,
                             name,
                             attrs: attrsvec
                         }
@@ -421,6 +422,7 @@ impl Node {
                         });
 
                         OpeningTag {
+                            empty: true,
                             name,
                             attrs: Default::default(),
                         }
@@ -584,6 +586,10 @@ impl Node {
                 s += "\"";
             }
 
+            if self.start.unwrap().is_self_closing() {
+                s += "/";
+            }
+
             s += ">";
         }
         if let Some(ref text) = self.text {
@@ -602,6 +608,26 @@ impl Node {
 
         s.shrink_to_fit();
         s
+    }
+
+    /// Change name of opening and closing tags (if any).
+    pub fn change_name(&mut self, name: &str) {
+        self.change_opening_name(name);
+        self.change_closing_name(name);
+    }
+
+    /// Change the name of only opening tag if it exists.
+    pub fn change_opening_name(&mut self, name: &str) {
+        if let Some(ref mut start) = self.start {
+            start.name = String::from(name);
+        }
+    }
+
+    /// Change the name of only closing tag if it exists.
+    pub fn change_closing_name(&mut self, name: &str) {
+        if let Some(ref mut end) = self.end {
+            *end = String::from(name);
+        }
     }
 }
 
@@ -713,6 +739,10 @@ impl OpeningTag {
     /// Attributes of tag.
     pub fn attributes(&self) -> &Vec<Attribute> {
         &self.attrs
+    }
+
+    pub fn is_self_closing(&self) -> bool {
+        self.empty
     }
 }
 
