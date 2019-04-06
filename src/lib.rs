@@ -575,7 +575,7 @@ impl Node {
     }
 
     /// Convert this node and all it's children into HTML string.
-    pub fn to_string(&self) -> String {
+    pub fn to_html(&self) -> String {
         let mut s = String::new();
         if let Some(name) = self.tag_name() {
             s += "<";
@@ -601,7 +601,7 @@ impl Node {
         }
 
         for child in &self.children {
-            s += &child.to_string();
+            s += &child.to_html();
         }
 
         if let Some(ref end) = self.end {
@@ -942,13 +942,13 @@ mod tests {
     }
 
     #[test]
-    fn node_to_string() {
+    fn node_to_html() {
         let html = "<p><i>Text</i><br></p>";
 
         let result = Node::from_html(html, &Default::default());
         let result = result.unwrap().unwrap();
 
-        let new_html = result.to_string();
+        let new_html = result.to_html();
 
         assert_eq!(html, &new_html);
     }
@@ -964,7 +964,7 @@ mod tests {
         attr.set_values(vec![String::from("b")]).unwrap();
 
         node.overwrite_attribute(attr);
-        let html = result.to_string(); // TODO rename to_html
+        let html = result.to_html();
 
         assert_eq!("<a href=\"b\">", &html);
     }
