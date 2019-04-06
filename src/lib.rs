@@ -9,67 +9,80 @@
 //! "#;
 //! // Load with default settings.
 //! let nodes = Node::from_html(html, &Default::default()).unwrap().unwrap();
-//! let first_node = nodes.get(0).unwrap();
-//! assert_eq!(first_node.tag_name().unwrap(), "div");
+//! let first_node = nodes.children().get(0).unwrap();
+//! assert_eq!("div", first_node.tag_name().unwrap());
 //!
 //! let children = first_node.children();
 //!
 //! let first_child = children.get(0).unwrap();
-//! assert_eq!(first_child.tag_name().unwrap(), "p");
-//! assert_eq!(first_child.text().unwrap(), "Text");
+//! assert_eq!("p", first_child.tag_name().unwrap());
+//! assert_eq!("Text", first_child.children().get(0).unwrap().text().unwrap());
 //! ```
 //!
-//! Load node with text mixed with children.
+//! Load node with text mixed with children. Text that is not mixed load inside the parent node and
+//! not as separate child.
 //! ```
-//! # use htmldom_read::Node;
+//! # use htmldom_read::{Node, LoadSettings};
 //! let html = r#"
 //!     <p>Text <sup>child</sup> more text</p>
 //! "#;
-//! let from = Node::from_html(html, &Default::default()).unwrap().unwrap();
-//! let node = from.get(0).unwrap();
+//! let settings = LoadSettings::new().all_text_separately(false);
+//!
+//! let from = Node::from_html(html, &settings).unwrap().unwrap();
+//! let node = from.children().get(0).unwrap();
 //! let children = node.children();
 //!
 //! let first_text = children.get(0).unwrap();
-//! assert_eq!(first_text.text().unwrap(), "Text ");
+//! assert_eq!("Text ", first_text.text().unwrap());
 //!
 //! let sup = children.get(1).unwrap();
-//! assert_eq!(sup.text().unwrap(), "child");
+//! assert_eq!("child", sup.text().unwrap());
 //!
 //! let last_text = children.get(2).unwrap();
-//! assert_eq!(last_text.text().unwrap(), " more text");
+//! assert_eq!(" more text", last_text.text().unwrap());
 //! ```
 
 pub extern crate quick_xml;
 extern crate memchr;
+
 use quick_xml::events::{Event, BytesEnd, BytesText, BytesStart};
 use quick_xml::{Error, Reader};
 use std::collections::LinkedList;
-use memchr::{memchr3_iter, memchr_iter};
-use quick_xml::events::attributes::{Attributes, Attribute};
+use memchr::{memchr_iter};
 
 /// Contains information about opening and corresponding closing tags. It also can
 /// contain the value of the text between opening and closing tags if there are no children.
 /// Otherwise, if there are children mixed with text then each text chunk is separated in
 /// it's own node with other children in order they appear in the code.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Node {
-
-    // Static lifetime is ok because internally Event uses Cow<'a> as storage for a value.
-    // When this Node is created ownership is converted from a reference with lifetime 'a into
-    // owned value (without lifetime).
 
     /// Start of the tag if any. It may be empty if this is a trailing text at the beginning of
     /// the HTML code. It also is empty in root node.
-    start: Option<BytesStart<'static>>,
+    start: Option<OpeningTag>,
 
     /// Text value if there is a text between opening and closing tags.
-    text: Option<BytesText<'static>>,
+    text: Option<String>,
 
     /// Closing tag if any.
-    end: Option<BytesEnd<'static>>,
+    end: Option<String>,
 
     /// Any direct children of this node. Does not include children of children nodes.
     children: Vec<Node>,
+}
+
+/// Information carried in the opening tag.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpeningTag {
+    name: String,
+    attrs: Vec<Attribute>,
+}
+
+/// Attribute of the tag.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attribute {
+    name: String,
+    values: Vec<String>,
 }
 
 /// Settings that provide different options of how to parse HTML.
@@ -77,6 +90,57 @@ pub struct Node {
 pub struct LoadSettings {
 
     all_text_separately: bool,
+}
+
+/// Settings to fetch children nodes that apply to given criteria.
+///
+/// # Examples
+/// ```
+/// # use htmldom_read::{ChildrenFetch, Node};
+/// let html = r#"
+/// <div id="mydiv">
+///     <p class="someclass">Text</p>
+/// </div>
+/// <a class="someclass else">link</a>
+/// "#;
+///
+/// // Create node tree for HTML code.
+/// let node = Node::from_html(html, &Default::default()).unwrap().unwrap();
+///
+/// // Create criteria. Find all with `id='mydiv'`.
+/// let fetch = node.children_fetch()
+///         .key("id")
+///         .value("mydiv");
+///
+/// // Search for all children that apply to criteria.
+/// let result = fetch.fetch();
+/// // Returns the first node: `<div id='mydiv'>`.
+/// assert_eq!(result.iter().nth(0).unwrap(), &node.children().get(0).unwrap());
+///
+/// // Search for all with class='someclass' allowing it to contain other classes too.
+/// let fetch = node.children_fetch()
+///         .key("class")
+///         .value_part("someclass");
+/// let result = fetch.fetch();
+/// // Returns the nodes <p> and <a>.
+/// //assert_eq!(result.iter().nth(0).unwrap(),
+/// //        &node.children().get(0).unwrap().children().get(0).unwrap());
+/// //assert_eq!(result.iter().nth(1).unwrap(), &node.children().get(1).unwrap());
+/// ```
+#[derive(Clone, Copy)]
+pub struct ChildrenFetch<'a> {
+    /// Node to search in.
+    node: &'a Node,
+
+    /// Key to search for.
+    key: Option<&'a str>,
+
+    /// Exact value to search for.
+    value: Option<&'a str>,
+
+    /// If exact value is not set then this defines a part of the value separated with whitespaces
+    /// to be found.
+    value_part: Option<&'a str>,
 }
 
 impl Node {
@@ -87,7 +151,7 @@ impl Node {
     /// When passing empty code, None will be returned.
     /// If there is an error parsing the HTML, then this function will fail and return the error
     /// type that occurred.
-    pub fn from_html(html: &str, settings: &LoadSettings) -> Result<Option<Vec<Node>>, Error> {
+    pub fn from_html(html: &str, settings: &LoadSettings) -> Result<Option<Node>, Error> {
         use Event::*;
         use std::collections::linked_list::Iter;
 
@@ -102,7 +166,9 @@ impl Node {
                     match reader.read_event(&mut buf)? {
                         Start(e) => {
                             let vec = e.to_vec();
-                            let e = BytesStart::borrowed_name(&vec).into_owned();
+                            let e = BytesStart::borrowed(
+                                &vec, e.name().len()
+                            ).into_owned();
                             Some(Start(e))
                         },
                         End(e) => {
@@ -112,7 +178,9 @@ impl Node {
                         },
                         Empty(e) => {
                             let vec = e.to_vec();
-                            let e = BytesStart::borrowed_name(&vec).into_owned();
+                            let e = BytesStart::borrowed(
+                                &vec, e.name().len()
+                            ).into_owned();
                             Some(Empty(e))
                         },
                         Text(e) => {
@@ -197,14 +265,46 @@ impl Node {
                 Start(e) => {
                     iter.next(); // Confirm reading this event.
 
-                    let start = Some(e.clone().into_owned());
+                    let start = Some({
+                        let name = String::from(unsafe {
+                            std::str::from_utf8_unchecked(
+                            &*e.name()).split_whitespace().next().unwrap()
+                        });
+
+                        let mut attrs = LinkedList::new();
+                        for attr in e.attributes() {
+                            if let Err(_) = attr {
+                                continue;
+                            }
+                            let attr = attr.unwrap();
+
+                            let name = String::from(unsafe {
+                                std::str::from_utf8_unchecked(attr.key)
+                            });
+                            let attr = Attribute::from_key_values(
+                                name,
+                                unsafe { std::str::from_utf8_unchecked(&*attr.value) }
+                            );
+                            attrs.push_back(attr);
+                        }
+                        let mut attrsvec = Vec::with_capacity(attrs.len());
+                        for attr in attrs {
+                            attrsvec.push(attr);
+                        }
+
+                        OpeningTag {
+                            name,
+                            attrs: attrsvec
+                        }
+                    });
                     let mut text = {
                         let peek = biter.next();
                         if let Some(peek) = peek {
                             match peek {
                                 Text(e) => {
                                     iter.next(); // Confirm reading event.
-                                    Some(e.clone().into_owned())
+                                    let s = unsafe { std::str::from_utf8_unchecked(e) };
+                                    Some(String::from(s))
                                 }
                                 _ => {
                                     biter = iter.clone(); // Revert read.
@@ -264,9 +364,12 @@ impl Node {
                                 match peek.unwrap() {
                                     End(e) => {
                                         // Check if names are same. If not - discard and return None.
-                                        if e.name() == start.as_ref().unwrap().name() {
+                                        if e.name() == start.as_ref().unwrap().name().as_bytes() {
                                             iter.next(); // Confirm reading end tag.
-                                            Some(e.clone().into_owned())
+                                            let s = unsafe {
+                                                std::str::from_utf8_unchecked(e.name())
+                                            };
+                                            Some(String::from(s))
                                         } else {
                                             biter = iter.clone();
                                             None
@@ -299,14 +402,29 @@ impl Node {
                         end: None,
                         children: Default::default(),
 
-                        text: Some(e.clone().into_owned()),
+                        text: Some(
+                            String::from(unsafe { std::str::from_utf8_unchecked(&*e) })
+                        ),
                     })
                 },
                 Empty(e) => {
                     iter.next();
 
+                    let start = Some({
+                        let name = e.name();
+                        let name = String::from(unsafe {
+                            std::str::from_utf8_unchecked(&*name)
+                                .split_whitespace().next().unwrap()
+                        });
+
+                        OpeningTag {
+                            name,
+                            attrs: Default::default(),
+                        }
+                    });
+
                     Some(Node {
-                        start: Some(e.clone().into_owned()),
+                        start,
                         end: None,
                         text: None,
                         children: Default::default(),
@@ -337,27 +455,36 @@ impl Node {
         if children.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(children))
+            Ok(Some(Node {
+                children,
+                start: None,
+                end: None,
+                text: None,
+            }))
         }
     }
 
     /// Start tag information.
-    pub fn start(&self) -> &Option<BytesStart<'static>> {
+    pub fn start(&self) -> &Option<OpeningTag> {
         &self.start
     }
 
     /// End tag information.
-    pub fn end(&self) -> &Option<BytesEnd<'static>> {
-        &self.end
+    pub fn end(&self) -> Option<&str> {
+        if let Some(ref end) = self.end {
+            Some(end)
+        } else {
+            None
+        }
     }
 
     /// Text that appears between opening and closing tags.
     pub fn text(&self) -> Option<&str> {
-        if self.text.is_none() {
-            return None;
+        if let Some(ref s) = self.text {
+            Some(s)
+        } else {
+            None
         }
-
-        Some(std::str::from_utf8(self.text.as_ref().unwrap().escaped()).unwrap())
     }
 
     /// Children tags of this node.
@@ -365,58 +492,214 @@ impl Node {
         &self.children
     }
 
-    fn name_from_full(full: &[u8]) -> &str {
-        // Locate the end of tag name.
-        let end = {
-            let mut memchr = memchr3_iter(
-                ' ' as _,
-                '\t' as _,
-                '\n' as _,
-                full);
-            memchr.next()
-        };
-
-        if end.is_none() {
-            std::str::from_utf8(full).unwrap()
-        } else {
-            std::str::from_utf8(&full[..end.unwrap()]).unwrap()
-        }
-    }
-
     /// The name of the tag that is represented by the node.
     pub fn tag_name(&self) -> Option<&str> {
-        if self.start.is_none() {
-            return None;
+        if let Some(ref start) = self.start {
+            Some(&start.name)
+        } else {
+            None
         }
-        let start = self.start.as_ref().unwrap();
-
-        Some(Self::name_from_full(start.name()))
     }
 
     /// Start tag attributes.
-    pub fn attributes(&self) -> Option<Attributes> {
+    pub fn attributes(&self) -> Option<&Vec<Attribute>> {
         if let Some(ref start) = self.start {
-            Some(start.attributes())
+            Some(&start.attrs)
         } else {
             None
         }
     }
 
     /// Find attribute by it's key.
-    pub fn attribute_by_key(&self, key: &str) -> Option<Attribute> {
+    pub fn attribute_by_key(&self, key: &str) -> Option<&Attribute> {
         if let Some(ref start) = self.start {
             for attr in start.attributes() {
-                if let Ok(attr) = attr {
-                    if attr.key == key.as_bytes() {
-                        return Some(attr);
-                    }
-                } else {
-                    // Looks like HTML code error!
-                    return None;
+                if attr.name() == key {
+                    return Some(attr);
                 }
             }
         }
         None
+    }
+
+    /// Get children fetcher for this node to find children that apply to some criteria.
+    pub fn children_fetch(&self) -> ChildrenFetch {
+        ChildrenFetch::for_node(self)
+    }
+}
+
+impl<'a> ChildrenFetch<'a> {
+
+    /// Get children fetcher for given node to find children that apply to some criteria.
+    pub fn for_node(node: &'a Node) -> Self {
+        ChildrenFetch {
+            node,
+            key:        None,
+            value:      None,
+            value_part: None,
+        }
+    }
+
+    /// Clone the fetcher with already set criteria but for given different node.
+    pub fn same_for_node(&self, node: &'a Node) -> Self {
+        let mut new = self.clone();
+        new.node = node;
+        new
+    }
+
+    /// Key to search for.
+    pub fn key(mut self, key: &'a str) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    pub fn set_key(&mut self, key: &'a str) {
+        self.key = Some(key);
+    }
+
+    /// Exact value to search for.
+    pub fn value(mut self, value: &'a str) -> Self {
+        self.value = Some(value);
+        self
+    }
+
+    pub fn set_value(&mut self, value: &'a str) {
+        self.value = Some(value);
+    }
+
+    /// If exact value is not set then this defines a part of the value separated with whitespaces
+    /// to be found. If `value` is, however, set then this field is ignored entirely.
+    pub fn value_part(mut self, part: &'a str) -> Self {
+        self.value_part = Some(part);
+        self
+    }
+
+    pub fn set_value_part(&mut self, part: &'a str) {
+        self.value_part = Some(part);
+    }
+
+    /// Get all children and their children that apply to the criteria.
+    pub fn fetch(self) -> LinkedList<&'a Node> {
+        fn sub<'a, 'b>(criteria: &'a ChildrenFetch<'b>) -> LinkedList<&'b Node> {
+            let mut list = LinkedList::new();
+
+            for child in &criteria.node.children {
+                let mut check_value_criteria = |attr: &Attribute| {
+                    if let Some(value) = criteria.value {
+                        if attr.values_to_string() == value {
+                            list.push_back(child);
+                        }
+                    } else if let Some(part) = criteria.value_part {
+                        let iter = attr.values().iter();
+                        for i in iter {
+                            if i == part {
+                                list.push_back(child);
+                                break;
+                            }
+                        }
+                    } else {
+                        // No value expected and finding of a key is enough.
+                        list.push_back(child);
+                    }
+                };
+
+                if let Some(key) = criteria.key {
+                    if let Some(attr) = child.attribute_by_key(key) {
+                        check_value_criteria(attr)
+                    }
+                } else {
+                    let attrs = child.attributes().unwrap();
+                    for attr in attrs {
+                        check_value_criteria(attr)
+                    }
+                }
+
+                let new_fetch = criteria.same_for_node(child);
+                let mut nodes = sub(&new_fetch);
+                list.append(&mut nodes);
+            }
+
+            list
+        }
+
+        sub(&self)
+    }
+}
+
+impl OpeningTag {
+
+    /// Name of this tag.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Attributes of tag.
+    pub fn attributes(&self) -> &Vec<Attribute> {
+        &self.attrs
+    }
+}
+
+impl Attribute {
+
+    /// Create from a name and values passed as single string that are separated by whitespaces.
+    fn from_key_values(name: String, values: &str) -> Self {
+        let values = {
+            let mut list = LinkedList::new();
+            for val in values.split_whitespace() {
+                list.push_back(String::from(val));
+            }
+
+            let mut vec = Vec::with_capacity(list.len());
+            for val in list {
+                vec.push(val);
+            }
+
+            vec
+        };
+
+        Attribute {
+            name,
+            values
+        }
+    }
+
+    /// The name of the attribute.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// All values stored in the attribute. Each value separated with whitespace is
+    /// located in another string in the array. To get values as single string, use
+    /// [`values_to_string`]
+    pub fn values(&self) -> &Vec<String> {
+        &self.values
+    }
+
+    /// Store all values in a string separated with spaces.
+    pub fn values_to_string(&self) -> String {
+        // Calculate the length of the string to allocate.
+        let len = {
+            let mut l = 0;
+            for val in &self.values {
+                l += val.len() + 1; // For space at the end.
+            }
+            l - 1 // Remove trailing last space.
+        };
+
+        let mut s = String::with_capacity(len);
+
+        let mut i = 0;
+        while i < self.values.len() {
+            s += self.values.get(i).unwrap();
+
+            i += 1;
+            // Do not add last (trailing) space.
+            if i < self.values.len() {
+                s += " ";
+            }
+        }
+
+        s
     }
 }
 
@@ -424,7 +707,7 @@ impl Default for LoadSettings {
 
     fn default() -> Self {
         LoadSettings {
-            all_text_separately: false,
+            all_text_separately: true,
         }
     }
 }
@@ -438,7 +721,7 @@ impl LoadSettings {
     /// Store all text values in separate children nodes. Even those text which is alone
     /// in tag body without other children.
     ///
-    /// False by default.
+    /// True by default.
     pub fn all_text_separately(mut self, b: bool) -> Self {
         self.set_all_text_separately(b);
         self
@@ -468,25 +751,25 @@ mod tests {
         let result = result.unwrap();
         let root = result.unwrap();
 
-        let node = root.get(0).unwrap();
+        let node = root.children().get(0).unwrap();
         let start = node.start().as_ref();
-        let name = std::str::from_utf8(start.unwrap().name());
-        assert_eq!(name.unwrap(), "p");
+        let name = start.unwrap().name();
+        assert_eq!("p", name);
 
-        let text = root.get(0).unwrap().children();
+        let text = root.children().get(0).unwrap().children();
         let text = text.get(0).unwrap().text();
-        assert_eq!(text.unwrap(), "Some text");
+        assert_eq!("Some text", text.unwrap());
 
-        let child = root.get(0).unwrap().children().get(1).unwrap();
+        let child = root.children().get(0).unwrap().children().get(1).unwrap();
         let child_name = child.tag_name();
-        assert_eq!(child_name.unwrap(), "img");
+        assert_eq!("img", child_name.unwrap());
 
-        let child = root.get(1).unwrap();
+        let child = root.children().get(1).unwrap();
         assert_eq!(child.tag_name().unwrap(), "a");
-        assert_eq!(child.text().unwrap(), "Link");
+        assert_eq!("Link", child.children().get(0).unwrap().text().unwrap());
 
-        let node = root.get(2).unwrap();
-        assert_eq!(node.tag_name().unwrap(), "br");
+        let node = root.children().get(2).unwrap();
+        assert_eq!("br", node.tag_name().unwrap());
     }
 
     #[test]
@@ -498,7 +781,7 @@ mod tests {
             .all_text_separately(true));
         let load = load.unwrap().unwrap();
 
-        let child = load.get(0).unwrap().children().get(0).unwrap();
+        let child = load.children().get(0).unwrap().children().get(0).unwrap();
         assert_eq!(child.text().unwrap(), "Text");
     }
 
@@ -517,8 +800,8 @@ mod tests {
         let result = Node::from_html(html, &Default::default());
         let result = result.unwrap().unwrap();
 
-        let first = result.get(0).unwrap();
+        let first = result.children().get(0).unwrap();
         assert_eq!(first.tag_name().unwrap(), "p");
-        assert_eq!(first.text().unwrap(), "Some  ");
+        assert_eq!("Some  ", first.children().get(0).unwrap().text().unwrap());
     }
 }
