@@ -513,8 +513,8 @@ impl Node {
         }
     }
 
-    /// Find attribute by it's key.
-    pub fn attribute_by_key(&self, key: &str) -> Option<&Attribute> {
+    /// Find attribute by it's name.
+    pub fn attribute_by_name(&self, key: &str) -> Option<&Attribute> {
         if let Some(ref start) = self.start {
             for attr in start.attributes() {
                 if attr.name() == key {
@@ -523,6 +523,44 @@ impl Node {
             }
         }
         None
+    }
+
+    /// Try saving given attribute in this node.
+    ///
+    /// # Failure
+    /// If this attribute is already present then this function will not change it.
+    /// If you need to overwrite the attribute anyway use [`overwrite_attribute`].
+    pub fn put_attribute(&mut self, attr: Attribute) -> Result<(), Attribute> {
+        if self.attribute_by_name(&attr.name).is_some() {
+            Err(attr)
+        } else {
+            self.overwrite_attribute(attr);
+            Ok(())
+        }
+    }
+
+    /// Save this attribute in the node. If it is already present then overwrite it.
+    pub fn overwrite_attribute(&mut self, attr: Attribute) {
+        if self.start.is_none() {
+            return;
+        }
+
+        // Find the attribute if it is present.
+        let pos = {
+            let mut i = 0;
+            let attrs = &mut self.start.unwrap().attrs;
+            while i < attrs.len() {
+                let this = attrs.get_mut(i).unwrap();
+                if attr.name == this.name {
+                    // Found. Overwrite.
+                    this.values = attr.values;
+                    return;
+                }
+            }
+
+            // Attribute was not found. Append new.
+            attrs.push(attr);
+        };
     }
 
     /// Get children fetcher for this node to find children that apply to some criteria.
@@ -643,7 +681,7 @@ impl<'a> ChildrenFetch<'a> {
                 };
 
                 if let Some(key) = criteria.key {
-                    if let Some(attr) = child.attribute_by_key(key) {
+                    if let Some(attr) = child.attribute_by_name(key) {
                         check_value_criteria(attr)
                     }
                 } else {
@@ -739,6 +777,26 @@ impl Attribute {
         }
 
         s
+    }
+
+    /// Set new name for attribute.
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    /// Set new values for attribute. If any of passed strings have whitespaces then this
+    /// function will fail.
+    pub fn set_values(&mut self, values: Vec<String>) -> Result<(), ()> {
+        // Check strings
+        for s in values {
+            if s.split_whitespace().count() > 1 {
+                return Err(());
+            }
+        }
+
+        self.values = values;
+
+        Ok(())
     }
 }
 

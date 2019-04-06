@@ -6,9 +6,9 @@ With the tree it is easier to process data that is stored as HTML/XML file.
 It is also possible to change the nodes and convert them back into HTML string.
 
 ## Current main features
-- [x] Parsing attributes with spaces into multiple strings
+- [x] Parse attributes with spaces into multiple strings
 - [x] Search for nodes that have particular attributes
-- [ ] Change attributes
+- [x] Change attributes
 - [ ] Change tag name
 - [ ] Create nodes manually
 - [ ] Edit node's children array
