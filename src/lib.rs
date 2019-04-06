@@ -553,21 +553,20 @@ impl Node {
         }
 
         // Find the attribute if it is present.
-        let pos = {
-            let mut i = 0;
-            let attrs = &mut self.start.unwrap().attrs;
-            while i < attrs.len() {
-                let this = attrs.get_mut(i).unwrap();
-                if attr.name == this.name {
-                    // Found. Overwrite.
-                    this.values = attr.values;
-                    return;
-                }
+        let mut i = 0;
+        let attrs = &mut self.start.as_mut().unwrap().attrs;
+        while i < attrs.len() {
+            let this = attrs.get_mut(i).unwrap();
+            if attr.name == this.name {
+                // Found. Overwrite.
+                this.values = attr.values;
+                return;
             }
+            i += 1;
+        }
 
-            // Attribute was not found. Append new.
-            attrs.push(attr);
-        };
+        // Attribute was not found. Append new.
+        attrs.push(attr);
     }
 
     /// Get children fetcher for this node to find children that apply to some criteria.
@@ -591,7 +590,7 @@ impl Node {
                 s += "\"";
             }
 
-            if self.start.unwrap().is_self_closing() {
+            if self.start.as_ref().unwrap().is_self_closing() {
                 s += "/";
             }
 
@@ -828,7 +827,7 @@ impl Attribute {
     /// function will fail.
     pub fn set_values(&mut self, values: Vec<String>) -> Result<(), ()> {
         // Check strings
-        for s in values {
+        for s in &values {
             if s.split_whitespace().count() > 1 {
                 return Err(());
             }
@@ -952,5 +951,21 @@ mod tests {
         let new_html = result.to_string();
 
         assert_eq!(html, &new_html);
+    }
+
+    #[test]
+    fn overwrite_attribute() {
+        let html = "<a href='a'>";
+        let result = Node::from_html(html, &Default::default());
+        let mut result = result.unwrap().unwrap();
+        let node = result.children_mut().get_mut(0).unwrap();
+
+        let mut attr = node.attribute_by_name("href").unwrap().clone();
+        attr.set_values(vec![String::from("b")]).unwrap();
+
+        node.overwrite_attribute(attr);
+        let html = result.to_string(); // TODO rename to_html
+
+        assert_eq!("<a href=\"b\">", &html);
     }
 }
