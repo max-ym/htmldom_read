@@ -14,7 +14,7 @@ It is also possible to change the nodes and convert them back into HTML string.
 - [ ] Edit node's children array
 
 ## Examples
-### To load nodes from HTML.
+### Load nodes from HTML
 ```
 # use htmldom_read::Node;
 let html = r#"
@@ -35,7 +35,7 @@ assert_eq!("p", first_child.tag_name().unwrap());
 assert_eq!("Text", first_child.children().get(0).unwrap().text().unwrap());
 ```
 
-### Load node with text mixed with children.
+### Load node with text mixed with children
  Text that is not mixed load inside the parent node and not as separate child.
 ```
 # use htmldom_read::{Node, LoadSettings};
