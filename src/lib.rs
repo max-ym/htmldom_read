@@ -45,6 +45,7 @@ use quick_xml::events::{Event, BytesEnd, BytesText, BytesStart};
 use quick_xml::{Error, Reader};
 use std::collections::LinkedList;
 use memchr::{memchr3_iter, memchr_iter};
+use quick_xml::events::attributes::{Attributes, Attribute};
 
 /// Contains information about opening and corresponding closing tags. It also can
 /// contain the value of the text between opening and closing tags if there are no children.
@@ -390,6 +391,32 @@ impl Node {
         let start = self.start.as_ref().unwrap();
 
         Some(Self::name_from_full(start.name()))
+    }
+
+    /// Start tag attributes.
+    pub fn attributes(&self) -> Option<Attributes> {
+        if let Some(ref start) = self.start {
+            Some(start.attributes())
+        } else {
+            None
+        }
+    }
+
+    /// Find attribute by it's key.
+    pub fn attribute_by_key(&self, key: &str) -> Option<Attribute> {
+        if let Some(ref start) = self.start {
+            for attr in start.attributes() {
+                if let Ok(attr) = attr {
+                    if attr.key == key.as_bytes() {
+                        return Some(attr);
+                    }
+                } else {
+                    // Looks like HTML code error!
+                    return None;
+                }
+            }
+        }
+        None
     }
 }
 
