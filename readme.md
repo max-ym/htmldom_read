@@ -8,10 +8,10 @@ It is also possible to change the nodes and convert them back into HTML string.
 ## Current main features
 - [x] Parsing attributes with spaces into multiple strings
 - [x] Search for nodes that have particular attributes
-- [] Change attributes
-- [] Change tag name
-- [] Create nodes manually
-- [] Edit node's children array
+- [ ] Change attributes
+- [ ] Change tag name
+- [ ] Create nodes manually
+- [ ] Edit node's children array
 
 ## Examples
 ### To load nodes from HTML.
