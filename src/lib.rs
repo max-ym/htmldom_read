@@ -57,7 +57,7 @@ use memchr::{memchr_iter};
 /// contain the value of the text between opening and closing tags if there are no children.
 /// Otherwise, if there are children mixed with text then each text chunk is separated in
 /// it's own node with other children in order they appear in the code.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Node {
     /// Start of the tag if any. It may be empty if this is a trailing text at the beginning of
     /// the HTML code. It also is empty in root node.
@@ -147,6 +147,11 @@ pub struct ChildrenFetch<'a> {
 }
 
 impl Node {
+
+    /// Create new empty node with no children nor tags.
+    pub fn new() -> Self {
+        Default::default()
+    }
 
     /// Load node tree from HTML string.
     ///

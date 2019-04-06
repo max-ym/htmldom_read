@@ -9,8 +9,7 @@ It is also possible to change the nodes and convert them back into HTML string.
 - [x] Parse attributes with spaces into multiple strings
 - [x] Search for nodes that have particular attributes
 - [x] Change attributes
-- [x] Change tag name
-- [ ] Create nodes manually
+- [x] Change tags name
 - [ ] Edit node's children array
 
 ## Examples
