@@ -1,6 +1,6 @@
 [package]
 name = "htmldom_read"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Maxym Naumchyk <max.naumch@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/max-ym/htmldom_read"
