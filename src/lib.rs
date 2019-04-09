@@ -45,13 +45,38 @@
 //! assert_eq!(" more text", last_text.text().unwrap());
 //! ```
 
-pub extern crate quick_xml;
+extern crate quick_xml;
 extern crate memchr;
 
 use quick_xml::events::{Event, BytesEnd, BytesText, BytesStart};
 use quick_xml::{Error, Reader};
 use std::collections::LinkedList;
 use memchr::{memchr_iter};
+use std::sync::{Arc, RwLock, RwLockReadGuard, LockResult, RwLockWriteGuard};
+use std::mem::discriminant;
+use std::ops::{Deref, DerefMut};
+use core::borrow::Borrow;
+
+type SharedNode = Arc<Node>;
+type SharedMutNode = Arc<RwLock<Node>>;
+
+/// Children of the node. All tags that are inside of parent node are listed in this struct.
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct Children(Vec<NodeAccess>);
+
+/// How node is being stored and accessed.
+#[derive(Debug, Clone)]
+pub enum NodeAccess {
+    Owned(Node),
+    Sharable(SharedNode),
+}
+
+/// How children are stored in the node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChildrenType {
+    Owned,
+    Sharable,
+}
 
 /// Contains information about opening and corresponding closing tags. It also can
 /// contain the value of the text between opening and closing tags if there are no children.
@@ -69,8 +94,8 @@ pub struct Node {
     /// Closing tag if any.
     end: Option<String>,
 
-    /// Any direct children of this node. Does not include children of children nodes.
-    children: Vec<Node>,
+    /// Direct children of this node. Does not include children of children nodes.
+    children: Children,
 }
 
 /// Information carried in the opening tag.
@@ -93,6 +118,7 @@ pub struct Attribute {
 pub struct LoadSettings {
 
     all_text_separately: bool,
+    children_type: ChildrenType,
 }
 
 /// Settings to fetch children nodes that apply to given criteria.
@@ -144,6 +170,127 @@ pub struct ChildrenFetch<'a> {
     /// If exact value is not set then this defines a part of the value separated with whitespaces
     /// to be found.
     value_part: Option<&'a str>,
+}
+
+impl IntoIterator for Children {
+
+    type Item = NodeAccess;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Deref for Children {
+
+    type Target = Vec<NodeAccess>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Children {
+
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Children {
+
+    fn iter_to_owned<T: IntoIterator<Item = Node>>(iter: T, capacity: usize) -> Children {
+        let mut arr = Vec::with_capacity(capacity);
+        for child in iter {
+            arr.push(NodeAccess::new_owned(child));
+        }
+
+        Children(arr)
+    }
+
+    fn iter_to_shared<T: IntoIterator<Item = Node>>(iter: T, capacity: usize) -> Children {
+        let mut arr = Vec::with_capacity(capacity);
+        for child in iter {
+            arr.push(NodeAccess::new_shared(child));
+        }
+
+        Children(arr)
+    }
+
+     fn iter_to<T: IntoIterator<Item = Node>>(children_type: &ChildrenType, iter: T, capacity: usize)
+            -> Children {
+        use ChildrenType::*;
+        match children_type {
+            Owned       => Children::iter_to_owned(iter, capacity),
+            Sharable => Children::iter_to_shared(iter, capacity),
+        }
+    }
+}
+
+impl PartialEq for NodeAccess {
+
+    fn eq(&self, other: &NodeAccess) -> bool {
+        use std::mem::discriminant;
+        if discriminant(self) != discriminant(other) {
+            return false;
+        }
+
+        use NodeAccess::*;
+        match self {
+            Owned(node) => {
+                if let Owned(other) = other {
+                    node == node
+                } else {
+                    unreachable!()
+                }
+            },
+            Sharable(node) => {
+                if let Sharable(other) = other {
+                    Arc::ptr_eq(node, other)
+                } else {
+                    unreachable!()
+                }
+            },
+        }
+    }
+}
+
+impl Deref for NodeAccess {
+
+    type Target = Node;
+
+    fn deref(&self) -> &Node {
+        use NodeAccess::*;
+        match self {
+            Owned(n) => n,
+            Sharable(n) => n
+        }
+    }
+}
+
+impl NodeAccess {
+
+    fn new_owned(node: Node) -> NodeAccess {
+        NodeAccess::Owned(node)
+    }
+
+    fn new_shared(node: Node) -> NodeAccess {
+        let arc = Arc::new(node);
+        NodeAccess::Sharable(arc)
+    }
+
+    /// Try to access node mutably. If this node is owned then this is possible. For sharable nodes
+    /// they can be accessed mutable only if they still were not shared.
+    pub fn try_mut(&mut self) -> Option<&mut Node> {
+        if let NodeAccess::Owned(n) = self {
+            Some(n)
+        } else if let NodeAccess::Sharable(n) = self {
+            Arc::get_mut(n)
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 impl Node {
@@ -358,11 +505,12 @@ impl Node {
                             }
                         }
 
-                        let mut vec = Vec::with_capacity(children.len());
-                        for c in children {
-                            vec.push(c);
-                        }
-                        vec
+                        let len = children.len();
+                        Children::iter_to(
+                            &settings.children_type,
+                            children,
+                            len
+                        )
                     };
                     let end = {
                         if start.is_some() { // Only opening tag can have a closing tag.
@@ -455,11 +603,8 @@ impl Node {
                 nodes.push_back(node.unwrap());
             }
 
-            let mut vec = Vec::with_capacity(nodes.len());
-            for n in nodes {
-                vec.push(n);
-            }
-            vec
+            let len = nodes.len();
+            Children::iter_to(&settings.children_type, nodes.into_iter(), len)
         };
 
         if children.is_empty() {
@@ -498,7 +643,7 @@ impl Node {
     }
 
     /// Children tags of this node.
-    pub fn children(&self) -> &Vec<Node> {
+    pub fn children(&self) -> &Children {
         &self.children
     }
 
@@ -600,7 +745,7 @@ impl Node {
             s += text;
         }
 
-        for child in &self.children {
+        for child in self.children.iter() {
             s += &child.to_html();
         }
 
@@ -635,7 +780,7 @@ impl Node {
     }
 
     /// Mutable access to array of node's children.
-    pub fn children_mut(&mut self) -> &mut Vec<Node> {
+    pub fn children_mut(&mut self) -> &mut Children {
         &mut self.children
     }
 }
@@ -691,11 +836,11 @@ impl<'a> ChildrenFetch<'a> {
     }
 
     /// Get all children and their children that apply to the criteria.
-    pub fn fetch(self) -> LinkedList<&'a Node> {
-        fn sub<'a, 'b>(criteria: &'a ChildrenFetch<'b>) -> LinkedList<&'b Node> {
+    pub fn fetch(self) -> LinkedList<&'a NodeAccess> {
+        fn sub(criteria: ChildrenFetch) -> LinkedList<&NodeAccess> {
             let mut list = LinkedList::new();
 
-            for child in &criteria.node.children {
+            for child in criteria.node.children.iter() {
                 let mut check_value_criteria = |attr: &Attribute| {
                     if let Some(value) = criteria.value {
                         if attr.values_to_string() == value {
@@ -726,15 +871,15 @@ impl<'a> ChildrenFetch<'a> {
                     }
                 }
 
-                let new_fetch = criteria.same_for_node(child);
-                let mut nodes = sub(&new_fetch);
+                let new_fetch = criteria.same_for_node(&child);
+                let mut nodes = sub(new_fetch);
                 list.append(&mut nodes);
             }
 
             list
         }
 
-        sub(&self)
+        sub(self)
     }
 }
 
@@ -844,6 +989,7 @@ impl Default for LoadSettings {
     fn default() -> Self {
         LoadSettings {
             all_text_separately: true,
+            children_type: ChildrenType::Owned,
         }
     }
 }
@@ -866,6 +1012,18 @@ impl LoadSettings {
     /// See [`all_text_separately`].
     pub fn set_all_text_separately(&mut self, b: bool) {
         self.all_text_separately = b;
+    }
+
+    /// Node owns all of its children. This is a default value.
+    pub fn owned_children(mut self) -> Self {
+        self.children_type = ChildrenType::Owned;
+        self
+    }
+
+    /// Node can share its children. Opposite to `owned_children`.
+    pub fn sharable_children(mut self) -> Self {
+        self.children_type = ChildrenType::Sharable;
+        self
     }
 }
 
@@ -963,7 +1121,7 @@ mod tests {
         let mut attr = node.attribute_by_name("href").unwrap().clone();
         attr.set_values(vec![String::from("b")]).unwrap();
 
-        node.overwrite_attribute(attr);
+        node.try_mut().unwrap().overwrite_attribute(attr);
         let html = result.to_html();
 
         assert_eq!("<a href=\"b\">", &html);

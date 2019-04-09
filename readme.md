@@ -12,6 +12,7 @@ It is also possible to change the nodes and convert them back into HTML string.
 - [x] Change tags name
 - [x] Edit node's children array
 - [x] Convert nodes back to HTML
+- [x] Choose between sharable and owned Nodes (with Arc or without correspondingly)
 
 ## Examples
 ### Load nodes from HTML
