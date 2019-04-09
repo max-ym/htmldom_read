@@ -223,6 +223,28 @@ impl Children {
             Sharable => Children::iter_to_shared(iter, capacity),
         }
     }
+
+    /// Get sharable children by cloning data.
+    pub fn to_sharable(&self) -> Self {
+        let children = &self.0;
+        let mut vec = Vec::with_capacity(children.len());
+        for child in children {
+            vec.push(child.to_sharable());
+        }
+
+        Children(vec)
+    }
+
+    /// Get owned children by cloning data.
+    pub fn to_owned(&self) -> Self {
+        let children = &self.0;
+        let mut vec = Vec::with_capacity(children.len());
+        for child in children {
+            vec.push(child.to_owned());
+        }
+
+        Children(vec)
+    }
 }
 
 impl PartialEq for NodeAccess {
@@ -286,6 +308,24 @@ impl NodeAccess {
             Arc::get_mut(n)
         } else {
             unreachable!()
+        }
+    }
+
+    /// Convert this node to a sharable by cloning.
+    pub fn to_sharable(&self) -> Self {
+        use NodeAccess::*;
+        match self {
+            Owned(n) => Sharable(Arc::new(n.clone())),
+            Sharable(n) => Sharable(n.clone())
+        }
+    }
+
+    /// Convert this node to an owned by cloning.
+    pub fn to_owned(&self) -> Self {
+        use NodeAccess::*;
+        match self {
+            Owned(n) => Owned(n.clone()),
+            Sharable(n) => Owned(n.as_ref().clone()),
         }
     }
 }
