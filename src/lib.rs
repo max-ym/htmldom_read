@@ -169,6 +169,11 @@ pub struct ChildrenFetch<'a> {
     value_part: Option<&'a str>,
 }
 
+/// Mutable `ChildrenFetch`. Allows to get mutable access to returned nodes.
+pub struct ChildrenFetchMut<'a> {
+    inner: ChildrenFetch<'a>,
+}
+
 impl IntoIterator for Children {
 
     type Item = NodeAccess;
@@ -754,6 +759,10 @@ impl Node {
     /// Get children fetcher for this node to find children that apply to some criteria.
     pub fn children_fetch(&self) -> ChildrenFetch {
         ChildrenFetch::for_node(self)
+    }
+
+    pub fn children_fetch_mut(&mut self) -> ChildrenFetchMut {
+        ChildrenFetchMut::for_node(self)
     }
 
     /// Convert this node and all it's children into HTML string.
