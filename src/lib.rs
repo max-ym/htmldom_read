@@ -473,7 +473,7 @@ impl Node {
                             let name = String::from(unsafe {
                                 std::str::from_utf8_unchecked(attr.key)
                             });
-                            let attr = Attribute::from_key_values(
+                            let attr = Attribute::from_name_and_str_values(
                                 name,
                                 unsafe { std::str::from_utf8_unchecked(&*attr.value) }
                             );
@@ -940,7 +940,7 @@ impl OpeningTag {
 impl Attribute {
 
     /// Create from a name and values passed as single string that are separated by whitespaces.
-    fn from_key_values(name: String, values: &str) -> Self {
+    pub fn from_name_and_str_values(name: String, values: &str) -> Self {
         let values = {
             let mut list = LinkedList::new();
             for val in values.split_whitespace() {
@@ -959,6 +959,16 @@ impl Attribute {
             name,
             values
         }
+    }
+
+    /// Create from a name and values passed as array of strings.
+    /// They should not contain whitespaces and invalid characters for attributes or names.
+    pub fn from_name_and_values(name: String, values: Vec<String>) -> Option<Self> {
+        // TODO check on whitespaces.
+        Some(Attribute {
+            name,
+            values
+        })
     }
 
     /// The name of the attribute.
