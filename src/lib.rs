@@ -52,13 +52,10 @@ use quick_xml::events::{Event, BytesEnd, BytesText, BytesStart};
 use quick_xml::{Error, Reader};
 use std::collections::LinkedList;
 use memchr::{memchr_iter};
-use std::sync::{Arc, RwLock, RwLockReadGuard, LockResult, RwLockWriteGuard};
-use std::mem::discriminant;
+use std::sync::{Arc};
 use std::ops::{Deref, DerefMut};
-use core::borrow::Borrow;
 
 type SharedNode = Arc<Node>;
-type SharedMutNode = Arc<RwLock<Node>>;
 
 /// Children of the node. All tags that are inside of parent node are listed in this struct.
 #[derive(Default, Clone, Debug, PartialEq)]
@@ -240,7 +237,7 @@ impl PartialEq for NodeAccess {
         match self {
             Owned(node) => {
                 if let Owned(other) = other {
-                    node == node
+                    node == other
                 } else {
                     unreachable!()
                 }
