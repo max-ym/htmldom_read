@@ -1019,6 +1019,18 @@ impl Attribute {
         s
     }
 
+    /// Get first value of the attribute if any.
+    ///
+    /// Usually, when attribute is known to contain single value this function makes it easier
+    /// to obtain this value. It does not construct new string as `values_to_string` and
+    /// is shorter than calling `values` and gettings first value manually (but is equivalent).
+    ///
+    /// # Panics
+    /// This function will panic if there are no attribute values.
+    pub fn first_value(&self) -> &String {
+        self.values.get(0).unwrap()
+    }
+
     /// Set new name for attribute.
     pub fn set_name(&mut self, name: String) {
         self.name = name;
