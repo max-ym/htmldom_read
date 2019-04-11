@@ -929,6 +929,60 @@ impl<'a> ChildrenFetch<'a> {
     }
 }
 
+impl<'a> ChildrenFetchMut<'a> {
+
+    /// Get children fetcher for given node to find children that apply to some criteria.
+    pub fn for_node(node: &'a Node) -> Self {
+        let inner = ChildrenFetch {
+            node,
+            key:        None,
+            value:      None,
+            value_part: None,
+        };
+        ChildrenFetchMut { inner }
+    }
+
+    /// Get all children and their children that apply to the criteria.
+    pub fn fetch_mut(self) -> LinkedList<&'a mut NodeAccess> {
+        let fetch = self.fetch();
+        let mut result = LinkedList::new();
+        for i in fetch {
+            let a = i as *const NodeAccess as *mut NodeAccess;
+            let a = unsafe { &mut *a };
+            result.push_back(a);
+        }
+        result
+    }
+
+    pub fn fetch(self) -> LinkedList<&'a NodeAccess> {
+        self.inner.fetch()
+    }
+
+    /// Clone the fetcher with already set criteria but for given different node.
+    pub fn same_for_node(&self, node: &'a Node) -> Self {
+        ChildrenFetchMut { inner: self.inner.same_for_node(node) }
+    }
+
+    /// Key to search for.
+    pub fn key(self, key: &'a str) -> Self {
+        let inner = self.inner.key(key);
+        ChildrenFetchMut { inner }
+    }
+
+    /// Exact value to search for.
+    pub fn value(self, value: &'a str) -> Self {
+        let inner = self.inner.value(value);
+        ChildrenFetchMut { inner }
+    }
+
+    /// If exact value is not set then this defines a part of the value separated with whitespaces
+    /// to be found. If `value` is, however, set then this field is ignored entirely.
+    pub fn value_part(self, part: &'a str) -> Self {
+        let inner = self.inner.value_part(part);
+        ChildrenFetchMut { inner }
+    }
+}
+
 impl OpeningTag {
 
     /// Name of this tag.
