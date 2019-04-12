@@ -229,23 +229,34 @@ impl Children {
         }
     }
 
-    /// Get sharable children by cloning data.
-    pub fn to_sharable(&self) -> Self {
+    /// Get sharable children by cloning data. All children and their children will get
+    /// sharable.
+    pub fn all_to_sharable(&self) -> Self {
         let children = &self.0;
         let mut vec = Vec::with_capacity(children.len());
         for child in children {
-            vec.push(child.to_sharable().into());
+            let mut child = child.to_owned();
+            let children = child.children.all_to_sharable();
+            *child.children = children.0;
+
+            let child = NodeAccess::new_shared(child);
+            vec.push(child);
         }
 
         Children(vec)
     }
 
-    /// Get owned children by cloning data.
-    pub fn to_owned(&self) -> Self {
+    /// Get owned children by cloning data. All children and their children will get
+    /// owned.
+    pub fn all_to_owned(&self) -> Self {
         let children = &self.0;
         let mut vec = Vec::with_capacity(children.len());
         for child in children {
-            vec.push(child.to_owned().into());
+            let mut child = child.to_owned();
+            let children = child.children.all_to_owned();
+            *child.children = children.0;
+
+            vec.push(child.into());
         }
 
         Children(vec)
