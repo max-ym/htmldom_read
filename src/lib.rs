@@ -884,6 +884,11 @@ impl Node {
         root.children = Children(vec![NodeAccess::Owned(self)]);
         Ok(root)
     }
+
+    /// Check whether this node is the root of the tree.
+    pub fn is_root(&self) -> bool {
+        self.text.is_none() && self.start.is_none() && self.text.is_none()
+    }
 }
 
 impl<'a> ChildrenFetch<'a> {
