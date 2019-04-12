@@ -345,6 +345,22 @@ impl NodeAccess {
             Sharable(n) => n.as_ref().clone(),
         }
     }
+
+    /// Wrap this leaf node into root node. See `wrap_to_root` from `Node` for details.
+    pub fn wrap_to_root(self) -> Result<Self, Self> {
+        use NodeAccess::*;
+
+        if self.is_root() {
+            return Err(self);
+        }
+
+        match self {
+            Owned(n) => Ok(Owned(Node::wrap_to_root(n).unwrap())),
+            Sharable(n) => Ok(Sharable(
+                    Arc::new(Node::wrap_to_root(n.as_ref().to_owned()).unwrap())
+                ))
+        }
+    }
 }
 
 impl From<Node> for NodeAccess {
