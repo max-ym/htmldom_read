@@ -1190,6 +1190,13 @@ impl Into<NodeAccess> for SharableAccess {
     }
 }
 
+impl Into<SharedNode> for SharableAccess {
+
+    fn into(self) -> SharedNode {
+        self.inner
+    }
+}
+
 impl Deref for OwnedAccess {
 
     type Target = Node;
@@ -1210,6 +1217,13 @@ impl Into<NodeAccess> for OwnedAccess {
 
     fn into(self) -> NodeAccess {
         NodeAccess::Owned(self.inner)
+    }
+}
+
+impl Into<Node> for OwnedAccess {
+
+    fn into(self) -> Node {
+        self.inner
     }
 }
 
