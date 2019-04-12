@@ -174,16 +174,6 @@ pub struct ChildrenFetchMut<'a> {
     inner: ChildrenFetch<'a>,
 }
 
-#[derive(Debug, Clone)]
-pub struct SharableAccess {
-    inner: SharedNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct OwnedAccess {
-    inner: Node,
-}
-
 impl IntoIterator for Children {
 
     type Item = NodeAccess;
@@ -327,29 +317,35 @@ impl NodeAccess {
     }
 
     /// Convert this node to a sharable by cloning.
-    pub fn to_sharable(&self) -> SharableAccess {
+    pub fn to_sharable(&self) -> SharedNode {
         use NodeAccess::*;
-        let inner = match self {
+        match self {
             Owned(n) => Arc::new(n.clone()),
             Sharable(n) => n.clone()
-        };
-
-        SharableAccess {
-            inner
         }
     }
 
     /// Convert this node to an owned by cloning.
-    pub fn to_owned(&self) -> OwnedAccess {
+    pub fn to_owned(&self) -> Node {
         use NodeAccess::*;
-        let inner = match self {
+        match self {
             Owned(n) => n.clone(),
             Sharable(n) => n.as_ref().clone(),
-        };
-
-        OwnedAccess {
-            inner
         }
+    }
+}
+
+impl From<Node> for NodeAccess {
+
+    fn from(node: Node) -> Self {
+        NodeAccess::Owned(node)
+    }
+}
+
+impl From<SharedNode> for NodeAccess {
+
+    fn from(sn: SharedNode) -> Self {
+        NodeAccess::Sharable(sn)
     }
 }
 
@@ -1164,66 +1160,6 @@ impl LoadSettings {
     pub fn sharable_children(mut self) -> Self {
         self.children_type = ChildrenType::Sharable;
         self
-    }
-}
-
-impl Deref for SharableAccess {
-
-    type Target = SharedNode;
-
-    fn deref(&self) -> &SharedNode {
-        &self.inner
-    }
-}
-
-impl DerefMut for SharableAccess {
-
-    fn deref_mut(&mut self) -> &mut SharedNode {
-        &mut self.inner
-    }
-}
-
-impl Into<NodeAccess> for SharableAccess {
-
-    fn into(self) -> NodeAccess {
-        NodeAccess::Sharable(self.inner)
-    }
-}
-
-impl Into<SharedNode> for SharableAccess {
-
-    fn into(self) -> SharedNode {
-        self.inner
-    }
-}
-
-impl Deref for OwnedAccess {
-
-    type Target = Node;
-
-    fn deref(&self) -> &Node {
-        &self.inner
-    }
-}
-
-impl DerefMut for OwnedAccess {
-
-    fn deref_mut(&mut self) -> &mut Node {
-        &mut self.inner
-    }
-}
-
-impl Into<NodeAccess> for OwnedAccess {
-
-    fn into(self) -> NodeAccess {
-        NodeAccess::Owned(self.inner)
-    }
-}
-
-impl Into<Node> for OwnedAccess {
-
-    fn into(self) -> Node {
-        self.inner
     }
 }
 
