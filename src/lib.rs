@@ -153,7 +153,7 @@ pub struct LoadSettings {
 ///         &node.children().get(0).unwrap().children().get(0).unwrap());
 /// assert_eq!(result.iter().nth(1).unwrap(), &node.children().get(1).unwrap());
 /// ```
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ChildrenFetch<'a> {
     /// Node to search in.
     node: &'a Node,
@@ -170,6 +170,7 @@ pub struct ChildrenFetch<'a> {
 }
 
 /// Mutable `ChildrenFetch`. Allows to get mutable access to returned nodes.
+#[derive(Clone, Copy, Debug)]
 pub struct ChildrenFetchMut<'a> {
     inner: ChildrenFetch<'a>,
 }
@@ -854,6 +855,35 @@ impl Node {
     pub fn children_mut(&mut self) -> &mut Children {
         &mut self.children
     }
+
+    /// Clone this node without cloning children leaving new node with empty children list.
+    pub fn clone_without_children(&self) -> Self {
+        Node {
+            start: self.start.clone(),
+            end: self.end.clone(),
+            text: self.text.clone(),
+            children: Default::default(),
+        }
+    }
+
+    /// Try wrapping this node into root. This makes it possible to use this node as individual
+    /// tree.
+    ///
+    /// It is required for trees to start with empty node only with children. Many functions
+    /// rely on this rule. For example, Fetch functions filter data only in children ignoring
+    /// parent attributes and data.
+    ///
+    /// # Failures
+    /// If this node already is root it is returned back in Err.
+    pub fn wrap_to_root(self) -> Result<Self, Self> {
+        if self.start.is_none() && self.text.is_none() {
+            return Err(self);
+        }
+
+        let mut root = Node::new();
+        root.children = Children(vec![NodeAccess::Owned(self)]);
+        Ok(root)
+    }
 }
 
 impl<'a> ChildrenFetch<'a> {
@@ -907,11 +937,13 @@ impl<'a> ChildrenFetch<'a> {
     }
 
     /// Get all children and their children that apply to the criteria.
+    /// This function does not check the parent node!
     pub fn fetch(self) -> LinkedList<&'a NodeAccess> {
         fn sub(criteria: ChildrenFetch) -> LinkedList<&NodeAccess> {
             let mut list = LinkedList::new();
 
             for child in criteria.node.children.iter() {
+                // Filter value and value_part by criteria. Append filtered values to list.
                 let mut check_value_criteria = |attr: &Attribute| {
                     if let Some(value) = criteria.value {
                         if attr.values_to_string() == value {
