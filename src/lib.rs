@@ -174,6 +174,16 @@ pub struct ChildrenFetchMut<'a> {
     inner: ChildrenFetch<'a>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SharableAccess {
+    inner: SharedNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct OwnedAccess {
+    inner: Node,
+}
+
 impl IntoIterator for Children {
 
     type Item = NodeAccess;
@@ -234,7 +244,7 @@ impl Children {
         let children = &self.0;
         let mut vec = Vec::with_capacity(children.len());
         for child in children {
-            vec.push(child.to_sharable());
+            vec.push(child.to_sharable().into());
         }
 
         Children(vec)
@@ -245,7 +255,7 @@ impl Children {
         let children = &self.0;
         let mut vec = Vec::with_capacity(children.len());
         for child in children {
-            vec.push(child.to_owned());
+            vec.push(child.to_owned().into());
         }
 
         Children(vec)
@@ -317,20 +327,28 @@ impl NodeAccess {
     }
 
     /// Convert this node to a sharable by cloning.
-    pub fn to_sharable(&self) -> Self {
+    pub fn to_sharable(&self) -> SharableAccess {
         use NodeAccess::*;
-        match self {
-            Owned(n) => Sharable(Arc::new(n.clone())),
-            Sharable(n) => Sharable(n.clone())
+        let inner = match self {
+            Owned(n) => Arc::new(n.clone()),
+            Sharable(n) => n.clone()
+        };
+
+        SharableAccess {
+            inner
         }
     }
 
     /// Convert this node to an owned by cloning.
-    pub fn to_owned(&self) -> Self {
+    pub fn to_owned(&self) -> OwnedAccess {
         use NodeAccess::*;
-        match self {
-            Owned(n) => Owned(n.clone()),
-            Sharable(n) => Owned(n.as_ref().clone()),
+        let inner = match self {
+            Owned(n) => n.clone(),
+            Sharable(n) => n.as_ref().clone(),
+        };
+
+        OwnedAccess {
+            inner
         }
     }
 }
@@ -1146,6 +1164,52 @@ impl LoadSettings {
     pub fn sharable_children(mut self) -> Self {
         self.children_type = ChildrenType::Sharable;
         self
+    }
+}
+
+impl Deref for SharableAccess {
+
+    type Target = SharedNode;
+
+    fn deref(&self) -> &SharedNode {
+        &self.inner
+    }
+}
+
+impl DerefMut for SharableAccess {
+
+    fn deref_mut(&mut self) -> &mut SharedNode {
+        &mut self.inner
+    }
+}
+
+impl Into<NodeAccess> for SharableAccess {
+
+    fn into(self) -> NodeAccess {
+        NodeAccess::Sharable(self.inner)
+    }
+}
+
+impl Deref for OwnedAccess {
+
+    type Target = Node;
+
+    fn deref(&self) -> &Node {
+        &self.inner
+    }
+}
+
+impl DerefMut for OwnedAccess {
+
+    fn deref_mut(&mut self) -> &mut Node {
+        &mut self.inner
+    }
+}
+
+impl Into<NodeAccess> for OwnedAccess {
+
+    fn into(self) -> NodeAccess {
+        NodeAccess::Owned(self.inner)
     }
 }
 
