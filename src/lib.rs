@@ -54,7 +54,6 @@ use std::collections::LinkedList;
 use memchr::{memchr_iter};
 use std::sync::{Arc};
 use std::ops::{Deref, DerefMut};
-use itertools::Itertools;
 
 type SharedNode = Arc<Node>;
 
@@ -1227,8 +1226,13 @@ impl Attribute {
     /// Set values from string.
     pub fn set_values_from_str(&mut self, values: &str) -> Result<(), ()> {
         let split = values.split_whitespace();
-        let vec = split.collect_vec();
-        self.set_values(vec)
+        let vec: Vec<&str> = split.collect();
+        let mut new_vec = Vec::with_capacity(vec.len());
+        for i in vec {
+            new_vec.push(i.to_string());
+        }
+
+        self.set_values(new_vec)
     }
 }
 
