@@ -391,296 +391,12 @@ impl Node {
     /// If there is an error parsing the HTML, then this function will fail and return the error
     /// type that occurred.
     pub fn from_html(html: &str, settings: &LoadSettings) -> Result<Option<Node>, Error> {
-        use Event::*;
-        use std::collections::linked_list::Iter;
-
-        // Collect all events.
-        let events = {
-            let mut reader = Reader::from_str(html);
-            let mut buf = Vec::new();
-            let mut list = LinkedList::new();
-            reader.check_end_names(false);
-            loop {
-                let event = {
-                    match reader.read_event(&mut buf)? {
-                        Start(e) => {
-                            let vec = e.to_vec();
-                            let e = BytesStart::borrowed(
-                                &vec, e.name().len()
-                            ).into_owned();
-                            Some(Start(e))
-                        },
-                        End(e) => {
-                            let vec = e.to_vec();
-                            let e = BytesEnd::borrowed(&vec).into_owned();
-                            Some(End(e))
-                        },
-                        Empty(e) => {
-                            let vec = e.to_vec();
-                            let e = BytesStart::borrowed(
-                                &vec, e.name().len()
-                            ).into_owned();
-                            Some(Empty(e))
-                        },
-                        Text(e) => {
-                            let vec = e.to_vec();
-                            let e = BytesText::from_plain(&vec).into_owned();
-                            Some(Text(e))
-                        },
-                        Eof => break,
-                        _ => None,
-                    }
-                };
-
-                if event.is_some() {
-                    list.push_back(event.unwrap());
-                }
-            }
-
-            // Remove trailing empty text on newlines.
-            let fixed_list = {
-                let trim_start = |s: String| {
-                    if s.is_empty() {
-                        return s;
-                    }
-
-                    let mut iter = s.chars();
-                    let first = iter.next().unwrap();
-                    if first == '\n' {
-                        String::from(s.trim_start())
-                    } else if first == '\t' || first == ' ' {
-                        while let Some(ch) = iter.next() {
-                            if ch != '\t' && ch != ' ' && ch != '\n' {
-                                return s;
-                            }
-                        }
-                        String::from(s.trim_start())
-                    } else {
-                        s
-                    }
-                };
-                let trim_end = |s: String| {
-                    let bytes = s.as_bytes();
-                    let mut memchr = memchr_iter('\n' as _, bytes);
-                    if let Some(_) = memchr.next() {
-                        String::from(s.trim_end())
-                    } else {
-                        s
-                    }
-                };
-
-                let mut fixed_list = LinkedList::new();
-                for i in list {
-                    if let Text(e) = i {
-                        let text = std::str::from_utf8(e.escaped()).unwrap();
-                        let text = String::from(text);
-                        let s = trim_start(text);
-                        let s = trim_end(s);
-                        if !s.is_empty() {
-                            let content = Vec::from(s.as_bytes());
-                            let new = Text(BytesText::from_plain(&content)).into_owned();
-                            fixed_list.push_back(new);
-                        }
-                    } else {
-                        fixed_list.push_back(i);
-                    }
-                }
-                fixed_list
-            };
-
-            fixed_list
-        };
-
-        // Function to read next node and it's children from event iterator.
-        #[allow(unused_assignments)]
-        fn next_node(iter: &mut Iter<Event>, settings: &LoadSettings) -> Option<Node> {
-            let mut biter = iter.clone();
-            let peek = biter.next();
-            if peek.is_none() {
-                return None;
-            }
-            let peek = peek.unwrap();
-            match peek {
-                Start(e) => {
-                    iter.next(); // Confirm reading this event.
-
-                    let start = Some({
-                        let name = String::from(unsafe {
-                            std::str::from_utf8_unchecked(
-                            &*e.name()).split_whitespace().next().unwrap()
-                        });
-
-                        let mut attrs = LinkedList::new();
-                        for attr in e.attributes() {
-                            if let Err(_) = attr {
-                                continue;
-                            }
-                            let attr = attr.unwrap();
-
-                            let name = String::from(unsafe {
-                                std::str::from_utf8_unchecked(attr.key)
-                            });
-                            let attr = Attribute::from_name_and_str_values(
-                                name,
-                                unsafe { std::str::from_utf8_unchecked(&*attr.value) }
-                            );
-                            attrs.push_back(attr);
-                        }
-                        let mut attrsvec = Vec::with_capacity(attrs.len());
-                        for attr in attrs {
-                            attrsvec.push(attr);
-                        }
-
-                        OpeningTag {
-                            empty: false,
-                            name,
-                            attrs: attrsvec
-                        }
-                    });
-                    let mut text = {
-                        let peek = biter.next();
-                        if let Some(peek) = peek {
-                            match peek {
-                                Text(e) => {
-                                    iter.next(); // Confirm reading event.
-                                    let s = unsafe { std::str::from_utf8_unchecked(e) };
-                                    Some(String::from(s))
-                                }
-                                _ => {
-                                    biter = iter.clone(); // Revert read.
-                                    None
-                                }
-                            }
-                        } else {
-                            biter = iter.clone(); // Revert read.
-                            None
-                        }
-                    };
-                    let children = {
-                        let mut children = LinkedList::new();
-                        loop {
-                            let child = next_node(iter, settings);
-                            if let Some(child) = child {
-                                children.push_back(child);
-                            } else {
-                                break;
-                            }
-                        }
-                        biter = iter.clone(); // Apply changes of iter.
-
-                        // Check whether to store text in separate node or in the same node.
-                        // Text cannot be mixed with children as this will loose information about
-                        // order of occurrences of children tags and the text values. So
-                        // in this case all texts are saved as nodes on their own in children array.
-                        // We only need to check already read text field as if it is read then it
-                        // precedes any children nodes. All other texts are already on their own
-                        // children nodes because of recursive call of this function.
-                        if text.is_some() {
-                            if !children.is_empty() || settings.all_text_separately {
-                                // Store as separate node as first child as it actually is the first
-                                // thing that was read.
-                                children.push_front(Node {
-                                    start: None,
-                                    end: None,
-                                    text,
-                                    children: Default::default(),
-                                });
-                                text = None;
-                            }
-                        }
-
-                        let len = children.len();
-                        Children::iter_to(
-                            &settings.children_type,
-                            children,
-                            len
-                        )
-                    };
-                    let end = {
-                        if start.is_some() { // Only opening tag can have a closing tag.
-                            let peek = biter.next();
-                            if peek.is_none() {
-                                None
-                            } else {
-                                match peek.unwrap() {
-                                    End(e) => {
-                                        // Check if names are same. If not - discard and return None.
-                                        if e.name() == start.as_ref().unwrap().name().as_bytes() {
-                                            iter.next(); // Confirm reading end tag.
-                                            let s = unsafe {
-                                                std::str::from_utf8_unchecked(e.name())
-                                            };
-                                            Some(String::from(s))
-                                        } else {
-                                            biter = iter.clone();
-                                            None
-                                        }
-                                    },
-                                    _ => {
-                                        biter = iter.clone();
-                                        None
-                                    }
-                                }
-                            }
-                        } else {
-                            None
-                        }
-                    };
-
-                    let e = Some(Node {
-                        start,
-                        end,
-                        text,
-                        children,
-                    });
-                    e
-                },
-                Text(e) => {
-                    iter.next();
-
-                    Some(Node {
-                        start: None,
-                        end: None,
-                        children: Default::default(),
-
-                        text: Some(
-                            String::from(unsafe { std::str::from_utf8_unchecked(&*e) })
-                        ),
-                    })
-                },
-                Empty(e) => {
-                    iter.next();
-
-                    let start = Some({
-                        let name = e.name();
-                        let name = String::from(unsafe {
-                            std::str::from_utf8_unchecked(&*name)
-                                .split_whitespace().next().unwrap()
-                        });
-
-                        OpeningTag {
-                            empty: true,
-                            name,
-                            attrs: Default::default(),
-                        }
-                    });
-
-                    Some(Node {
-                        start,
-                        end: None,
-                        text: None,
-                        children: Default::default(),
-                    })
-                },
-                _ => None
-            }
-        }
-
+        let events = Self::collect_events(html);
         let children = {
             let mut nodes = LinkedList::new();
             let mut iter = events.iter();
             loop {
-                let node = next_node(&mut iter, settings);
+                let node = Self::next_node(&mut iter, settings);
                 if node.is_none() {
                     break;
                 }
@@ -701,6 +417,330 @@ impl Node {
                 text: None,
             }))
         }
+    }
+
+    fn collect_events(html: &str) -> LinkedList<Event> {
+        use Event::*;
+
+        let mut reader = Reader::from_str(html);
+        let mut buf = Vec::new();
+        let mut list = LinkedList::new();
+        reader.check_end_names(false);
+        loop {
+            let event = Self::process_next_event(reader.read_event(&mut buf));
+
+            if event.is_some() {
+                list.push_back(event.unwrap());
+            } else {
+                break;
+            }
+        }
+
+        // Remove trailing empty text on newlines.
+        let fixed_list = {
+            let trim_start = |s: String| {
+                if s.is_empty() {
+                    return s;
+                }
+
+                let mut iter = s.chars();
+                let first = iter.next().unwrap();
+                if first == '\n' {
+                    String::from(s.trim_start())
+                } else if first == '\t' || first == ' ' {
+                    while let Some(ch) = iter.next() {
+                        if ch != '\t' && ch != ' ' && ch != '\n' {
+                            return s;
+                        }
+                    }
+                    String::from(s.trim_start())
+                } else {
+                    s
+                }
+            };
+            let trim_end = |s: String| {
+                let bytes = s.as_bytes();
+                let mut memchr = memchr_iter('\n' as _, bytes);
+                if let Some(_) = memchr.next() {
+                    String::from(s.trim_end())
+                } else {
+                    s
+                }
+            };
+
+            let mut fixed_list = LinkedList::new();
+            for i in list {
+                if let Text(e) = i {
+                    let text = std::str::from_utf8(e.escaped()).unwrap();
+                    let text = String::from(text);
+                    let s = trim_start(text);
+                    let s = trim_end(s);
+                    if !s.is_empty() {
+                        let content = Vec::from(s.as_bytes());
+                        let new = Text(BytesText::from_plain(&content)).into_owned();
+                        fixed_list.push_back(new);
+                    }
+                } else {
+                    fixed_list.push_back(i);
+                }
+            }
+            fixed_list
+        };
+
+        fixed_list
+    }
+
+    fn process_next_event(event: quick_xml::Result<Event>) -> Option<Event<'static>> {
+        use Event::*;
+
+        if event.is_err() {
+            return None;
+        }
+        let event: Event = event.unwrap();
+
+        match event {
+            Start(e) => {
+                let vec = e.to_vec();
+                let e = BytesStart::borrowed(
+                    &vec, e.name().len()
+                ).into_owned();
+                Some(Start(e))
+            },
+            End(e) => {
+                let vec = e.to_vec();
+                let e = BytesEnd::borrowed(&vec).into_owned();
+                Some(End(e))
+            },
+            Empty(e) => {
+                let vec = e.to_vec();
+                let e = BytesStart::borrowed(
+                    &vec, e.name().len()
+                ).into_owned();
+                Some(Empty(e))
+            },
+            Text(e) => {
+                let vec = e.to_vec();
+                let e = BytesText::from_plain(&vec).into_owned();
+                Some(Text(e))
+            },
+            Eof => None,
+            _ => None,
+        }
+    }
+
+    /// Function to read next node and it's children from event iterator.
+    #[allow(unused_assignments)]
+    fn next_node(
+            iter: &mut std::collections::linked_list::Iter<Event>,
+            settings: &LoadSettings) -> Option<Node> {
+        use Event::*;
+
+        let mut biter = iter.clone();
+        let peek = biter.next();
+        if peek.is_none() {
+            return None;
+        }
+        let peek = peek.unwrap();
+        match peek {
+            Start(e) => {
+                iter.next(); // Confirm reading this event.
+
+                let start = Some({
+                    let name = String::from(unsafe {
+                        std::str::from_utf8_unchecked(
+                            &*e.name()).split_whitespace().next().unwrap()
+                    });
+
+                    let mut attrs = LinkedList::new();
+                    for attr in e.attributes() {
+                        if let Err(_) = attr {
+                            continue;
+                        }
+                        let attr = attr.unwrap();
+
+                        let name = String::from(unsafe {
+                            std::str::from_utf8_unchecked(attr.key)
+                        });
+                        let attr = Attribute::from_name_and_str_values(
+                            name,
+                            unsafe { std::str::from_utf8_unchecked(&*attr.value) }
+                        );
+                        attrs.push_back(attr);
+                    }
+                    let mut attrsvec = Vec::with_capacity(attrs.len());
+                    for attr in attrs {
+                        attrsvec.push(attr);
+                    }
+
+                    OpeningTag {
+                        empty: false,
+                        name,
+                        attrs: attrsvec
+                    }
+                });
+                let mut text = {
+                    let peek = biter.next();
+                    if let Some(peek) = peek {
+                        match peek {
+                            Text(e) => {
+                                iter.next(); // Confirm reading event.
+                                let s = unsafe { std::str::from_utf8_unchecked(e) };
+                                Some(String::from(s))
+                            }
+                            _ => {
+                                biter = iter.clone(); // Revert read.
+                                None
+                            }
+                        }
+                    } else {
+                        biter = iter.clone(); // Revert read.
+                        None
+                    }
+                };
+                let children = {
+                    let mut children = LinkedList::new();
+                    loop {
+                        let child = Self::next_node(iter, settings);
+                        if let Some(child) = child {
+                            children.push_back(child);
+                        } else {
+                            break;
+                        }
+                    }
+                    biter = iter.clone(); // Apply changes of iter.
+
+                    // Check whether to store text in separate node or in the same node.
+                    // Text cannot be mixed with children as this will loose information about
+                    // order of occurrences of children tags and the text values. So
+                    // in this case all texts are saved as nodes on their own in children array.
+                    // We only need to check already read text field as if it is read then it
+                    // precedes any children nodes. All other texts are already on their own
+                    // children nodes because of recursive call of this function.
+                    if text.is_some() {
+                        if !children.is_empty() || settings.all_text_separately {
+                            // Store as separate node as first child as it actually is the first
+                            // thing that was read.
+                            children.push_front(Node {
+                                start: None,
+                                end: None,
+                                text,
+                                children: Default::default(),
+                            });
+                            text = None;
+                        }
+                    }
+
+                    let len = children.len();
+                    Children::iter_to(
+                        &settings.children_type,
+                        children,
+                        len
+                    )
+                };
+                let end = {
+                    if start.is_some() { // Only opening tag can have a closing tag.
+                        let peek = biter.next();
+                        if peek.is_none() {
+                            None
+                        } else {
+                            match peek.unwrap() {
+                                End(e) => {
+                                    // Check if names are same. If not - discard and return None.
+                                    if e.name() == start.as_ref().unwrap().name().as_bytes() {
+                                        iter.next(); // Confirm reading end tag.
+                                        let s = unsafe {
+                                            std::str::from_utf8_unchecked(e.name())
+                                        };
+                                        Some(String::from(s))
+                                    } else {
+                                        biter = iter.clone();
+                                        None
+                                    }
+                                },
+                                _ => {
+                                    biter = iter.clone();
+                                    None
+                                }
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                let e = Some(Node {
+                    start,
+                    end,
+                    text,
+                    children,
+                });
+                e
+            },
+            Text(e) => {
+                iter.next();
+
+                Some(Node {
+                    start: None,
+                    end: None,
+                    children: Default::default(),
+
+                    text: Some(
+                        String::from(unsafe { std::str::from_utf8_unchecked(&*e) })
+                    ),
+                })
+            },
+            Empty(e) => {
+                iter.next();
+
+                let start = Some({
+                    let name = e.name();
+                    let name = String::from(unsafe {
+                        std::str::from_utf8_unchecked(&*name)
+                            .split_whitespace().next().unwrap()
+                    });
+
+                    OpeningTag {
+                        empty: true,
+                        name,
+                        attrs: Default::default(),
+                    }
+                });
+
+                Some(Node {
+                    start,
+                    end: None,
+                    text: None,
+                    children: Default::default(),
+                })
+            },
+            _ => None
+        }
+    }
+
+    /// Load the first node from HTML string without wrapping node to the tree with root (empty
+    /// first node). Just return the exact single node.
+    ///
+    /// # Failures
+    /// None is returned if string does not contain any node (is empty).
+    pub fn from_html_first(html: &str, settings: &LoadSettings) -> Option<Self> {
+        let events = Self::collect_events(html);
+        let mut iter = events.iter();
+        let node = {
+            let mut result;
+            loop {
+                let node = Self::next_node(&mut iter, settings);
+                if node.is_none() {
+                    result = None;
+                    break;
+                } else {
+                    result = node;
+                    break;
+                }
+            }
+            result
+        };
+
+        node
     }
 
     /// Start tag information.
