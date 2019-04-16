@@ -427,12 +427,15 @@ impl Node {
         let mut list = LinkedList::new();
         reader.check_end_names(false);
         loop {
-            let event = Self::process_next_event(reader.read_event(&mut buf));
+            let event
+                = Self::process_next_event(reader.read_event(&mut buf));
+            if event.is_err() {
+                break;
+            }
 
+            let event = event.unwrap();
             if event.is_some() {
                 list.push_back(event.unwrap());
-            } else {
-                break;
             }
         }
 
@@ -490,11 +493,11 @@ impl Node {
         fixed_list
     }
 
-    fn process_next_event(event: quick_xml::Result<Event>) -> Option<Event<'static>> {
+    fn process_next_event(event: quick_xml::Result<Event>) -> Result<Option<Event<'static>>, ()> {
         use Event::*;
 
         if event.is_err() {
-            return None;
+            return Err(());
         }
         let event: Event = event.unwrap();
 
@@ -504,27 +507,28 @@ impl Node {
                 let e = BytesStart::borrowed(
                     &vec, e.name().len()
                 ).into_owned();
-                Some(Start(e))
+                Ok(Some(Start(e)))
             },
             End(e) => {
                 let vec = e.to_vec();
                 let e = BytesEnd::borrowed(&vec).into_owned();
-                Some(End(e))
+                Ok(Some(End(e)))
             },
             Empty(e) => {
                 let vec = e.to_vec();
                 let e = BytesStart::borrowed(
                     &vec, e.name().len()
                 ).into_owned();
-                Some(Empty(e))
+                Ok(Some(Empty(e)))
             },
             Text(e) => {
                 let vec = e.to_vec();
                 let e = BytesText::from_plain(&vec).into_owned();
-                Some(Text(e))
+                Ok(Some(Text(e)))
             },
-            Eof => None,
-            _ => None,
+            DocType(_) => Ok(None),
+            Eof => Err(()),
+            _ => Err(()),
         }
     }
 
