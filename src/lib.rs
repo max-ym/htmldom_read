@@ -1176,6 +1176,10 @@ impl Attribute {
             for val in &self.values {
                 l += val.len() + 1; // For space at the end.
             }
+            if l == 0 {
+                // There are no values - empty string.
+                return String::new();
+            }
             l - 1 // Remove trailing last space.
         };
 
