@@ -133,8 +133,9 @@ pub struct LoadSettings {
 /// // Create node tree for HTML code.
 /// let node = Node::from_html(html, &Default::default()).unwrap().unwrap();
 ///
-/// // Create criteria. Find all with `id='mydiv'`.
+/// // Create criteria. Find all `div` nodes with `id='mydiv'`.
 /// let fetch = node.children_fetch()
+///         .tag("div")
 ///         .key("id")
 ///         .value("mydiv");
 ///
@@ -157,6 +158,9 @@ pub struct LoadSettings {
 pub struct ChildrenFetch<'a> {
     /// Node to search in.
     node: &'a Node,
+
+    /// Tag to search for.
+    tag: Option<&'a str>,
 
     /// Key to search for.
     key: Option<&'a str>,
@@ -957,6 +961,7 @@ impl<'a> ChildrenFetch<'a> {
     pub fn for_node(node: &'a Node) -> Self {
         ChildrenFetch {
             node,
+            tag:        None,
             key:        None,
             value:      None,
             value_part: None,
@@ -968,6 +973,16 @@ impl<'a> ChildrenFetch<'a> {
         let mut new = self.clone();
         new.node = node;
         new
+    }
+
+    /// Tag to search for.
+    pub fn tag(mut self, tag: &'a str) -> Self {
+        self.tag = Some(tag);
+        self
+    }
+
+    pub fn set_tag(&mut self, tag: &'a str) {
+        self.tag = Some(tag);
     }
 
     /// Key to search for.
@@ -1008,6 +1023,12 @@ impl<'a> ChildrenFetch<'a> {
             let mut list = LinkedList::new();
 
             for child in criteria.node.children.iter() {
+                // Filter on tag if present.
+                if let Some(tag) = criteria.tag {
+                    if child.tag_name().unwrap_or("") != tag {
+                        continue;
+                    }
+                }
                 // Filter value and value_part by criteria. Append filtered values to list.
                 let mut check_value_criteria = |attr: &Attribute| {
                     if let Some(value) = criteria.value {
@@ -1057,6 +1078,7 @@ impl<'a> ChildrenFetchMut<'a> {
     pub fn for_node(node: &'a Node) -> Self {
         let inner = ChildrenFetch {
             node,
+            tag:        None,
             key:        None,
             value:      None,
             value_part: None,
