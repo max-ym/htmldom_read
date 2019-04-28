@@ -989,9 +989,10 @@ impl<'a> ChildrenFetch<'a> {
                         check_value_criteria(attr)
                     }
                 } else {
-                    let attrs = child.attributes().unwrap();
-                    for attr in attrs {
-                        check_value_criteria(attr)
+                    if let Some(attrs) = child.attributes() {
+                        for attr in attrs {
+                            check_value_criteria(attr)
+                        }
                     }
                 }
 
